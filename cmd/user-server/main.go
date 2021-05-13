@@ -60,9 +60,26 @@ func main() {
 				return
 			}
 
-			err = http.ListenAndServe(fmt.Sprintf(":%d", serverPort), us)
+			srv := &http.Server{
+				Addr:    fmt.Sprintf(":%d", serverPort),
+				Handler: us,
+			}
+
+			go func() {
+				err := srv.ListenAndServe()
+				if err != nil {
+					klog.ErrorS(err, "http listen failed")
+				}
+			}()
+
+			// Setting up signal capturing
+			stop := make(chan os.Signal, 1)
+			signal.Notify(stop, os.Interrupt)
+
+			<-stop
+			err = srv.Shutdown(context.TODO())
 			if err != nil {
-				klog.ErrorS(err, "http listen failed")
+				klog.ErrorS(err, "http server shutdown failed")
 			}
 		},
 	}
