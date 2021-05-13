@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: anp-server
+  name: anp-server
+spec:
+  selector:
+    matchLabels:
+      app: anp-server
+  template:
+    metadata:
+      labels:
+        app: anp-server
+    spec:
+      containers:
+        - name: proxy-server
+          image: proxyserver:1.0.0
+          command:
+            - "./bin/proxy-server"
+            - "--mode=http-connect"
+            - "--server-ca-cert=/certs/master-issued-ca.crt"
+            - "--server-cert=/certs/master-issued-proxy-master.crt"
+            - "--server-key=/certs/master-private-proxy-master.key"
+            - "--cluster-ca-cert=/certs/agent-issued-ca.crt"
+            - "--cluster-cert=/certs/agent-issued-proxy-master.crt"
+            - "--cluster-key=/certs/agent-private-proxy-master.key"
+          volumeMounts:
+            - name: certs
+              mountPath: /certs
+              readOnly: true
+          ports:
+            - name: agentport
+              containerPort: 8091
+        - name: user-server
+          image: userserver:1.0.0
+          ports:
+            - name: userport
+              containerPort: 8080
+      volumes:
+        - name: certs
+          secret:
+            secretName: certs
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: anp-server-service
+spec:
+  type: NodePort # for local test we use NodePort
+  ports:
+    - name: agentport
+      port: 8091
+      nodePort: 30950
+    - name: userport
+      port: 8080
+      nodePort: 30951
+  selector:
+    app: anp-server
