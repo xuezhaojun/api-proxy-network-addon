@@ -33,7 +33,7 @@ const (
 )
 
 const (
-	ClusterPort = 8000 // the port of service agent-deliver
+	ClusterPort = 8000
 )
 
 func main() {
@@ -104,6 +104,8 @@ type userServer struct {
 	clientKey       string
 	proxyServerHost string
 	proxyServerPort int
+
+	clients map[string]*http.Client
 }
 
 func NewUserServer(
@@ -132,10 +134,12 @@ func NewUserServer(
 		clientCert:      clientCert,
 		proxyServerHost: proxyServerHost,
 		proxyServerPort: proxyServerPort,
+		clients:         make(map[string]*http.Client),
 	}, nil
 }
 
 func (u *userServer) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
+	// parse clusterID from current requestURL
 	clusterID, kubeAPIPath, err := parseRequestURL(request.RequestURI)
 	if err != nil {
 		http.Error(writer, err.Error(), http.StatusBadRequest)
@@ -154,25 +158,42 @@ func (u *userServer) ServeHTTP(writer http.ResponseWriter, request *http.Request
 		requestPort:  ClusterPort,
 		requestPath:  kubeAPIPath,
 	}
+
+	fmt.Println("my cluster url", fmt.Sprintf("http://%s:%d/%s", clusterID, ClusterPort, kubeAPIPath))
+	client, ok := u.clients[clusterID]
+	if ok {
+		// if client for clusterID exist, then make request directly
+		err = makeRequest(o, client, writer)
+		if err != nil {
+			klog.ErrorS(err, "make request to clusterID")
+		}
+	}
+	if err != nil || !ok {
+		newClient, err := makeClient(o)
+		if err != nil {
+			klog.Error(err, "create client failed")
+			return
+		}
+		err = makeRequest(o, newClient, writer)
+		if err != nil {
+			klog.ErrorS(err, "make request to clusterID")
+			return
+		}
+		u.clients[clusterID] = newClient
+	}
+}
+
+func makeClient(o *options) (*http.Client, error) {
 	dialer, err := getMTLSDialer(o)
 	if err != nil {
-		http.Error(writer, err.Error(), http.StatusBadRequest)
-		return
+		return nil, err
 	}
 	transport := &http.Transport{
 		DialContext: dialer,
 	}
-	client := &http.Client{
+	return &http.Client{
 		Transport: transport,
-	}
-
-	// make a request
-	fmt.Println("my cluster url", fmt.Sprintf("http://%s:%d/%s", clusterID, ClusterPort, kubeAPIPath))
-	err = makeRequest(o, client, writer)
-	if err != nil {
-		http.Error(writer, err.Error(), http.StatusOK) // get data from proxy-server ok
-		return
-	}
+	}, nil
 }
 
 func makeRequest(o *options, client *http.Client, writer http.ResponseWriter) error {
@@ -226,11 +247,7 @@ type options struct {
 	requestPort  int
 	proxyHost    string
 	proxyPort    int
-	proxyUdsName string
 	mode         string
-	userAgent    string
-	testRequests int
-	testDelaySec int
 }
 
 func getMTLSDialer(o *options) (func(ctx context.Context, network, addr string) (net.Conn, error), error) {

@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: anp-agent
+  name: anp-agent
+spec:
+  selector:
+    matchLabels:
+      app: anp-agent
+  template:
+    metadata:
+      labels:
+        app: anp-agent
+    spec:
+      hostAliases:
+        - ip: "127.0.0.1"
+          hostnames:
+            - "agent1"
+      containers:
+        - name: sidecar
+          image: kubectlproxy:1.0.0
+          command:
+            - "/usr/local/bin/kubectl"
+            - "proxy"
+            - "--port=8000"
+            - "--accept-hosts=.*"
+            - "--v=10"
+          ports:
+            - containerPort: 8000
+        - name: proxyagent
+          image: proxyagent-amd64:1.0.0
+          command:
+            - "/proxy-agent"
+            - "--proxy-server-host=host.docker.internal" # sepcially for docker access host in mac
+            - "--proxy-server-port=8091" # server ip we set in
+            - "--ca-cert=/certs/agent-issued-ca.crt"
+            - "--agent-cert=/certs/agent-issued-proxy-agent.crt"
+            - "--agent-key=/certs/agent-private-proxy-agent.key"
+            - "--agent-identifiers=host=agent1"
+          volumeMounts:
+            - name: certs
+              mountPath: /certs
+              readOnly: true
+      volumes:
+        - name: certs
+          secret:
+            secretName: certs

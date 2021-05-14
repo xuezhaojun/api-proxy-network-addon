@@ -15,9 +15,9 @@ spec:
     spec:
       containers:
         - name: proxy-server
-          image: proxyserver:1.0.0
+          image: proxyserver-amd64:1.0.0
           command:
-            - "./bin/proxy-server"
+            - "/proxy-server"
             - "--mode=http-connect"
             - "--server-ca-cert=/certs/master-issued-ca.crt"
             - "--server-cert=/certs/master-issued-proxy-master.crt"
@@ -25,6 +25,7 @@ spec:
             - "--cluster-ca-cert=/certs/agent-issued-ca.crt"
             - "--cluster-cert=/certs/agent-issued-proxy-master.crt"
             - "--cluster-key=/certs/agent-private-proxy-master.key"
+            - "--proxy-strategies=destHost"
           volumeMounts:
             - name: certs
               mountPath: /certs
@@ -34,6 +35,15 @@ spec:
               containerPort: 8091
         - name: user-server
           image: userserver:1.0.0
+          command:
+            - "/user-server"
+            - "--ca-cert=/certs/master-issued-ca.crt"
+            - "--client-cert=/certs/master-issued-proxy-client.crt"
+            - "--client-key=/certs/master-private-proxy-client.key"
+          volumeMounts:
+            - name: certs
+              mountPath: /certs
+              readOnly: true
           ports:
             - name: userport
               containerPort: 8080
