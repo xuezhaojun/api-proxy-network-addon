@@ -34,7 +34,7 @@ spec:
             - name: agentport
               containerPort: 8091
         - name: user-server
-          image: userserver:1.0.0
+          image: userserver:1.0.1
           command:
             - "/user-server"
             - "--ca-cert=/certs/master-issued-ca.crt"

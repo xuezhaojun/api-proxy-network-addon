@@ -33,7 +33,7 @@ spec:
           command:
             - "/proxy-agent"
             - "--proxy-server-host=host.docker.internal" # sepcially for docker access host in mac
-            - "--proxy-server-port=8091" # server ip we set in
+            - "--proxy-server-port=9091" # server ip we set in
             - "--ca-cert=/certs/agent-issued-ca.crt"
             - "--agent-cert=/certs/agent-issued-proxy-agent.crt"
             - "--agent-key=/certs/agent-private-proxy-agent.key"

@@ -1,5 +1,0 @@
-export SERVER_FULL_IMAGE=proxyserver
-export AGENT_FULL_IMAGE=proxyagent
-export TEST_CLIENT_FULL_IMAGE=testclient
-export TEST_SERVER_FULL_IMAGE=testserver
-export TAG=1.0.0

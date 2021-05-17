@@ -2,7 +2,7 @@ DOCKER_CMD ?= docker
 ARCH ?= amd64
 USER_SERVER_IMAGE ?= userserver
 KUBECTL_PROXY_IMANGE ?= kubectlproxy
-TAG ?= 1.0.0
+TAG ?= 1.0.1
 
 .PHONY: docker-build/user-server
 docker-build/user-server: cmd/user-server/main.go

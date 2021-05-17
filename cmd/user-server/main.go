@@ -21,6 +21,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 const (
@@ -104,6 +105,7 @@ type userServer struct {
 	clientKey       string
 	proxyServerHost string
 	proxyServerPort int
+	sync.Mutex
 
 	clients map[string]*http.Client
 }
@@ -159,11 +161,19 @@ func (u *userServer) ServeHTTP(writer http.ResponseWriter, request *http.Request
 		requestPath:  kubeAPIPath,
 	}
 
+	// create new request
+	requestURL := fmt.Sprintf("%s://%s:%d/%s", o.requestProto, o.requestHost, o.requestPort, o.requestPath)
+	newRequest, err := http.NewRequest(request.Method, requestURL, request.Body)
+	if err != nil {
+		klog.ErrorS(err, "create a new request based on old request")
+	}
+
+	u.Lock()
 	fmt.Println("my cluster url", fmt.Sprintf("http://%s:%d/%s", clusterID, ClusterPort, kubeAPIPath))
 	client, ok := u.clients[clusterID]
 	if ok {
 		// if client for clusterID exist, then make request directly
-		err = makeRequest(o, client, writer)
+		err = makeRequest(newRequest, client, writer)
 		if err != nil {
 			klog.ErrorS(err, "make request to clusterID")
 		}
@@ -174,13 +184,14 @@ func (u *userServer) ServeHTTP(writer http.ResponseWriter, request *http.Request
 			klog.Error(err, "create client failed")
 			return
 		}
-		err = makeRequest(o, newClient, writer)
+		err = makeRequest(newRequest, newClient, writer)
 		if err != nil {
 			klog.ErrorS(err, "make request to clusterID")
 			return
 		}
 		u.clients[clusterID] = newClient
 	}
+	u.Unlock()
 }
 
 func makeClient(o *options) (*http.Client, error) {
@@ -196,12 +207,7 @@ func makeClient(o *options) (*http.Client, error) {
 	}, nil
 }
 
-func makeRequest(o *options, client *http.Client, writer http.ResponseWriter) error {
-	requestURL := fmt.Sprintf("%s://%s:%d/%s", o.requestProto, o.requestHost, o.requestPort, o.requestPath)
-	request, err := http.NewRequest("GET", requestURL, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create request %s to send, got %v", requestURL, err)
-	}
+func makeRequest(request *http.Request, client *http.Client, writer http.ResponseWriter) error {
 	response, err := client.Do(request)
 	if err != nil {
 		return fmt.Errorf("failed to send request to client, got %v", err)
@@ -213,6 +219,12 @@ func makeRequest(o *options, client *http.Client, writer http.ResponseWriter) er
 		return fmt.Errorf("failed to read response from client, got %v", err)
 	}
 	klog.V(4).Infof("HTML Response:\n%s\n", string(data))
+	headermap := map[string][]string(response.Header)
+	for key, values := range headermap {
+		for _, value := range values {
+			writer.Header().Add(key, value)
+		}
+	}
 
 	_, err = writer.Write(data)
 	if err != nil {
@@ -263,7 +275,8 @@ func getMTLSDialer(o *options) (func(ctx context.Context, network, addr string) 
 	signal.Notify(ch)
 
 	go func() {
-		<-ch
+		sig := <-ch
+		klog.InfoS("close signal:", sig)
 		err := proxyConn.Close()
 		klog.ErrorS(err, "connection closed")
 	}()
