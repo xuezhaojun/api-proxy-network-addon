@@ -219,6 +219,8 @@ func makeRequest(request *http.Request, client *http.Client, writer http.Respons
 		return fmt.Errorf("failed to read response from client, got %v", err)
 	}
 	klog.V(4).Infof("HTML Response:\n%s\n", string(data))
+
+	// add response header to response
 	headermap := map[string][]string(response.Header)
 	for key, values := range headermap {
 		for _, value := range values {
