@@ -167,6 +167,7 @@ func (u *userServer) ServeHTTP(writer http.ResponseWriter, request *http.Request
 	if err != nil {
 		klog.ErrorS(err, "create a new request based on old request")
 	}
+	newRequest.Header = request.Header
 
 	u.Lock()
 	fmt.Println("my cluster url", fmt.Sprintf("http://%s:%d/%s", clusterID, ClusterPort, kubeAPIPath))
