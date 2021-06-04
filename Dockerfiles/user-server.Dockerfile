@@ -2,7 +2,6 @@ FROM golang:1.16 AS builder
 WORKDIR /go/src/github.com/open-cluster-management/api-network-proxy-addon
 
 COPY cmd/ cmd/
-COPY pkg/ pkg/
 COPY vendor/ vendor/
 COPY go.mod go.mod
 COPY go.sum go.sum
