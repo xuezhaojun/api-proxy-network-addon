@@ -16,7 +16,7 @@ spec:
       hostAliases:
         - ip: "127.0.0.1"
           hostnames:
-            - "agent1"
+            - "cluster1"
       containers:
         - name: sidecar
           image: kubectlproxy:1.0.0
@@ -38,7 +38,7 @@ spec:
             - "--ca-cert=/certs/agent-issued-ca.crt"
             - "--agent-cert=/certs/agent-issued-proxy-agent.crt"
             - "--agent-key=/certs/agent-private-proxy-agent.key"
-            - "--agent-identifiers=host=agent1"
+            - "--agent-identifiers=host=cluster1" # must remember modify hostname at the same time
           volumeMounts:
             - name: certs
               mountPath: /certs

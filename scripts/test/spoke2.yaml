@@ -16,7 +16,7 @@ spec:
       hostAliases:
         - ip: "127.0.0.1"
           hostnames:
-            - "agent2"
+            - "cluster2"
       containers:
         - name: sidecar
           image: kubectlproxy:1.0.0
@@ -33,12 +33,12 @@ spec:
           image: proxyagent-amd64:1.0.0
           command:
             - "/proxy-agent"
-            - "--proxy-server-host=host.docker.internal" # sepcially for docker access host in mac
+            - "--proxy-server-host=host.docker.internal" # specially for docker access host in mac
             - "--proxy-server-port=8091" # server ip we set in
             - "--ca-cert=/certs/agent-issued-ca.crt"
             - "--agent-cert=/certs/agent-issued-proxy-agent.crt"
             - "--agent-key=/certs/agent-private-proxy-agent.key"
-            - "--agent-identifiers=host=agent2"
+            - "--agent-identifiers=host=cluster2"  # must remember modify hostname at the same time
           volumeMounts:
             - name: certs
               mountPath: /certs
