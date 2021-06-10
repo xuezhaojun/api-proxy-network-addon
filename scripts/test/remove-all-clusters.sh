@@ -1,3 +1,3 @@
 kind delete cluster --name hub
-kind delete cluster --name spoke1
-kind delete cluster --name spoke2
+kind delete cluster --name cluster1
+kind delete cluster --name cluster2

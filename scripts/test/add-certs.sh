@@ -13,7 +13,7 @@ kubectl create secret generic certs \
 	--from-file=master-private-ca.key=./master/private/ca.key \
 	--from-file=master-private-proxy-client.key=./master/private/proxy-client.key \
 	--from-file=master-private-proxy-master.key=./master/private/proxy-master.key
-kubectl config use-context kind-spoke1
+kubectl config use-context kind-cluster1
 kubectl create secret generic certs \
   --from-file=agent-issued-ca.crt=./agent/issued/ca.crt \
   --from-file=agent-issued-proxy-agent.crt=./agent/issued/proxy-agent.crt \
@@ -27,7 +27,7 @@ kubectl create secret generic certs \
 	--from-file=master-private-ca.key=./master/private/ca.key \
 	--from-file=master-private-proxy-client.key=./master/private/proxy-client.key \
 	--from-file=master-private-proxy-master.key=./master/private/proxy-master.key
-kubectl config use-context kind-spoke2
+kubectl config use-context kind-cluster2
 kubectl create secret generic certs \
   --from-file=agent-issued-ca.crt=./agent/issued/ca.crt \
   --from-file=agent-issued-proxy-agent.crt=./agent/issued/proxy-agent.crt \
