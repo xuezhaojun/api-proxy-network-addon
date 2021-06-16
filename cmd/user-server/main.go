@@ -148,14 +148,11 @@ func (u *userServer) ServeHTTP(writer http.ResponseWriter, request *http.Request
 		http.Error(writer, err.Error(), http.StatusBadRequest)
 	}
 
-	for key, value := range request.Header {
-		fmt.Println(key, value)
-	}
 	// for now, commands based on SPDY/3.1 are not supported
-	//if request.Header.Get("Connection") == "Upgrade" {
-	//	writer.Write([]byte("command not support yet"))
-	//	return
-	//}
+	if request.Header.Get("Connection") == "Upgrade" {
+		writer.Write([]byte("command not support yet"))
+		return
+	}
 
 	// connect with http tunnel
 	o := &options{
