@@ -34,7 +34,8 @@ const (
 )
 
 const (
-	ClusterPort = 8000
+	ClusterPort         = 8000
+	ClusterRequestProto = "https"
 )
 
 func main() {
@@ -154,6 +155,11 @@ func (u *userServer) ServeHTTP(writer http.ResponseWriter, request *http.Request
 		return
 	}
 
+	fmt.Println("headers:")
+	for k, v := range request.Header {
+		fmt.Println(k, v)
+	}
+
 	// connect with http tunnel
 	o := &options{
 		mode:         "http-connect",
@@ -162,7 +168,7 @@ func (u *userServer) ServeHTTP(writer http.ResponseWriter, request *http.Request
 		clientCert:   u.clientCert,
 		proxyHost:    u.proxyServerHost,
 		proxyPort:    u.proxyServerPort,
-		requestProto: "http",
+		requestProto: ClusterRequestProto,
 		requestHost:  clusterID,
 		requestPort:  ClusterPort,
 		requestPath:  kubeAPIPath,
