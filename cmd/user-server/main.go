@@ -35,7 +35,7 @@ const (
 
 const (
 	ClusterPort         = 8000
-	ClusterRequestProto = "https"
+	ClusterRequestProto = "http"
 )
 
 func main() {
@@ -149,12 +149,6 @@ func (u *userServer) ServeHTTP(writer http.ResponseWriter, request *http.Request
 		http.Error(writer, err.Error(), http.StatusBadRequest)
 	}
 
-	// for now, commands based on SPDY/3.1 are not supported
-	if request.Header.Get("Connection") == "Upgrade" {
-		writer.Write([]byte("command not support yet"))
-		return
-	}
-
 	fmt.Println("headers:")
 	for k, v := range request.Header {
 		fmt.Println(k, v)
@@ -183,7 +177,7 @@ func (u *userServer) ServeHTTP(writer http.ResponseWriter, request *http.Request
 	newRequest.Header = request.Header
 
 	u.Lock()
-	fmt.Println("my cluster url", fmt.Sprintf("http://%s:%d/%s", clusterID, ClusterPort, kubeAPIPath))
+	fmt.Println("my cluster url path", fmt.Sprintf("//%s:%d/%s", clusterID, ClusterPort, kubeAPIPath))
 	client, ok := u.clients[clusterID]
 	if ok {
 		// if client for clusterID exist, then make request directly

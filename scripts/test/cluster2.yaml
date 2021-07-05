@@ -19,14 +19,9 @@ spec:
             - "cluster2"
       containers:
         - name: sidecar
-          image: kubectlproxy:1.0.0
+          image: apiserverproxy:1.0.0
           command:
-            - "/usr/local/bin/kubectl"
-            - "proxy"
-            - "--disable-filter=true"
-            - "--port=8000"
-            - "--accept-hosts=.*"
-            - "--v=10"
+            - "/apiserver-proxy"
           ports:
             - containerPort: 8000
         - name: proxyagent
@@ -34,7 +29,7 @@ spec:
           command:
             - "/proxy-agent"
             - "--proxy-server-host=host.docker.internal" # specially for docker access host in mac
-            - "--proxy-server-port=8091" # server ip we set in
+            - "--proxy-server-port=9091" # local now # server ip we set in
             - "--ca-cert=/certs/agent-issued-ca.crt"
             - "--agent-cert=/certs/agent-issued-proxy-agent.crt"
             - "--agent-key=/certs/agent-private-proxy-agent.key"
