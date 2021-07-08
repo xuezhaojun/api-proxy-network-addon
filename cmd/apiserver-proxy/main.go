@@ -35,14 +35,11 @@ func proxyHandler(wr http.ResponseWriter, req *http.Request) {
 		klog.Errorf("KUBE_APISERVER_ADDRESS parse error: %s", err.Error())
 		return
 	}
-	for k, v := range req.Header {
-		fmt.Println(k, v)
-	}
 
 	// change the proto from http to https
 	req.Proto = "https"
 
-	// skip insecure
+	// skip insecure verify
 	http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 
 	proxy := httputil.NewSingleHostReverseProxy(apiserverURL)
