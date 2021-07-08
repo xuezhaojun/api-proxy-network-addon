@@ -26,7 +26,7 @@ const (
 )
 
 const (
-	DEFAULT_PORT = 8000
+	DefaultPort = 8000
 )
 
 func proxyHandler(wr http.ResponseWriter, req *http.Request) {
@@ -65,7 +65,7 @@ func main() {
 		},
 	}
 
-	cmd.Flags().Int(FlagProxyPort, DEFAULT_PORT, "handle request from proxy-agent using this port")
+	cmd.Flags().Int(FlagProxyPort, DefaultPort, "handle request from proxy-agent using this port")
 
 	if err := cmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
