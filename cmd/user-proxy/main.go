@@ -32,6 +32,10 @@ const (
 	FlagCACert          = "ca-cert"
 	FlagClientCert      = "client-cert"
 	FlagClientKey       = "client-key"
+
+	// TODO: May user same cert files as Hub Cluster
+	FlagServerCert      = "server-cert"
+	FlagServerKey       = "server-key"
 )
 
 const (
@@ -109,19 +113,45 @@ func (u *UserServer) proxyHandler(wr http.ResponseWriter, req *http.Request) {
 	http.DefaultTransport.(*http.Transport).DialContext = dialer
 
 	// restruct new apiserverURL
-	apiserverURL, err := url.Parse(fmt.Sprintf("%s://%s:%d/%s", o.requestProto, o.requestHost, o.requestPort, o.requestPath))
+	target := fmt.Sprintf("%s://%s:%d", o.requestProto, o.requestHost, o.requestPort)
+	apiserverURL, err := url.Parse(target)
 	if err != nil {
 		klog.ErrorS(err, "parse restructed URL")
 		return
 	}
 
+	// update request URL path
+	req.URL.Path = o.requestPath
+
+	// update proti
+	req.Proto = "http"
+
+	klog.V(4).InfoS("request:", "scheme",req.URL.Scheme, "rawQuery", req.URL.RawQuery,"path",req.URL.Path)
+
 	proxy := httputil.NewSingleHostReverseProxy(apiserverURL)
-	proxy.ServeHTTP(wr, req)
+	proxy.ServeHTTP(LogResponseWriter{wr: wr}, req)
+}
+
+type LogResponseWriter struct {
+	wr http.ResponseWriter
+}
+
+func (l LogResponseWriter) Header() http.Header {
+	return l.wr.Header()
+}
+
+func (l LogResponseWriter) Write(bytes []byte) (int, error) {
+	klog.V(4).InfoS("response from apiserver:", "response", string(bytes))
+	return l.wr.Write(bytes)
+}
+
+func (l LogResponseWriter) WriteHeader(statusCode int) {
+	l.wr.WriteHeader(statusCode)
 }
 
 // parseRequestURL
-// Example Input: <service-ip>:8080/<clusterID>/api/pods
-// Output:
+// Example Input: <service-ip>:8080/<clusterID>/api/pods?timeout=32s
+// Example Output:
 // 	clusterID: <clusterID>
 // 	kubeAPIPath: api/pods
 func parseRequestURL(requestURL string) (clusterID string, kubeAPIPath string, err error) {
@@ -131,7 +161,8 @@ func parseRequestURL(requestURL string) (clusterID string, kubeAPIPath string, e
 		return
 	}
 	clusterID = paths[1]                       // <clusterID>
-	kubeAPIPath = strings.Join(paths[2:], "/") // api/pods
+	kubeAPIPath = strings.Join(paths[2:], "/") // api/pods?timeout=32s
+	kubeAPIPath = strings.Split(kubeAPIPath,"?")[0] // api/pods
 	return
 }
 
@@ -269,6 +300,8 @@ func main() {
 			caCert, _ := cmd.Flags().GetString(FlagCACert)
 			clientCert, _ := cmd.Flags().GetString(FlagClientCert)
 			clientKey, _ := cmd.Flags().GetString(FlagClientKey)
+			serverCert, _ := cmd.Flags().GetString(FlagServerCert)
+			serverKey, _ := cmd.Flags().GetString(FlagServerKey)
 
 			us, err := NewUserServer(caCert, clientCert, clientKey, proxyServerHost, proxyServerPort)
 			if err != nil {
@@ -277,7 +310,7 @@ func main() {
 			}
 
 			http.HandleFunc("/", us.proxyHandler)
-			if err := http.ListenAndServe(":"+strconv.Itoa(serverPort), nil); err != nil {
+			if err := http.ListenAndServeTLS("localhost:"+strconv.Itoa(serverPort), serverCert,serverKey,nil); err != nil {
 				klog.ErrorS(err, "listen to http err")
 			}
 		},
@@ -289,6 +322,10 @@ func main() {
 	cmd.Flags().String(FlagCACert, "", "We use to validate clients.")
 	cmd.Flags().String(FlagClientCert, "", "Secure communication with this cert.")
 	cmd.Flags().String(FlagClientKey, "", "Secure communication with this key.")
+
+	// TODO: same auth as Hub cluster
+	cmd.Flags().String(FlagServerCert, "", "Secure communication with this cert.")
+	cmd.Flags().String(FlagServerKey, "", "Secure communication with this key.")
 
 	if err := cmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)

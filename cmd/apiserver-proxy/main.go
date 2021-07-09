@@ -17,8 +17,8 @@ import (
 )
 
 const (
-	KUBE_APISERVER_ADDRESS = "https://kubernetes.default.svc"
-	//KUBE_APISERVER_ADDRESS = "https://kubernetes.default" // for local test
+	//KUBE_APISERVER_ADDRESS = "https://kubernetes.default.svc"
+	KUBE_APISERVER_ADDRESS = "https://kubernetes.default" // for local test
 )
 
 const (
@@ -29,11 +29,36 @@ const (
 	DefaultPort = 8000
 )
 
+type LogResponseWriter struct {
+	wr http.ResponseWriter
+}
+
+func (l LogResponseWriter) Header() http.Header {
+	return l.wr.Header()
+}
+
+func (l LogResponseWriter) Write(bytes []byte) (int, error) {
+	klog.V(4).InfoS("response from apiserver:", "response", string(bytes))
+	return l.wr.Write(bytes)
+}
+
+func (l LogResponseWriter) WriteHeader(statusCode int) {
+	l.wr.WriteHeader(statusCode)
+}
+
 func proxyHandler(wr http.ResponseWriter, req *http.Request) {
 	apiserverURL, err := url.Parse(KUBE_APISERVER_ADDRESS)
 	if err != nil {
 		klog.Errorf("KUBE_APISERVER_ADDRESS parse error: %s", err.Error())
 		return
+	}
+
+	klog.V(4).InfoS("requestURL", req.RequestURI)
+
+	if klog.V(4).Enabled() {
+		for k,v := range req.Header {
+			klog.InfoS("Header:",k,v)
+		}
 	}
 
 	// change the proto from http to https
@@ -43,7 +68,7 @@ func proxyHandler(wr http.ResponseWriter, req *http.Request) {
 	http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 
 	proxy := httputil.NewSingleHostReverseProxy(apiserverURL)
-	proxy.ServeHTTP(wr, req)
+	proxy.ServeHTTP(LogResponseWriter{wr: wr}, req)
 }
 
 func main() {
