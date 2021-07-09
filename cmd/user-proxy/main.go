@@ -79,7 +79,7 @@ func (u *UserServer) proxyHandler(wr http.ResponseWriter, req *http.Request) {
 	// parse clusterID from current requestURL
 	clusterID, kubeAPIPath, err := parseRequestURL(req.RequestURI)
 	if err != nil {
-		klog.V(4).ErrorS(err, "parse request URL failed")
+		klog.ErrorS(err, "parse request URL failed")
 		return
 	}
 
@@ -103,7 +103,7 @@ func (u *UserServer) proxyHandler(wr http.ResponseWriter, req *http.Request) {
 	// replace dialer with tunnel dialer
 	dialer, err := getMTLSDialer(o)
 	if err != nil {
-		klog.V(4).ErrorS(err, "get dialer failed")
+		klog.ErrorS(err, "get dialer failed")
 		return
 	}
 	http.DefaultTransport.(*http.Transport).DialContext = dialer
@@ -111,7 +111,7 @@ func (u *UserServer) proxyHandler(wr http.ResponseWriter, req *http.Request) {
 	// restruct new apiserverURL
 	apiserverURL, err := url.Parse(fmt.Sprintf("%s://%s:%d/%s", o.requestProto, o.requestHost, o.requestPort, o.requestPath))
 	if err != nil {
-		klog.V(4).ErrorS(err, "parse restructed URL")
+		klog.ErrorS(err, "parse restructed URL")
 		return
 	}
 
@@ -272,13 +272,13 @@ func main() {
 
 			us, err := NewUserServer(caCert, clientCert, clientKey, proxyServerHost, proxyServerPort)
 			if err != nil {
-				klog.V(4).ErrorS(err, "new user server failed")
+				klog.ErrorS(err, "new user server failed")
 				return
 			}
 
 			http.HandleFunc("/", us.proxyHandler)
 			if err := http.ListenAndServe(":"+strconv.Itoa(serverPort), nil); err != nil {
-				klog.V(4).ErrorS(err, "listen to http err")
+				klog.ErrorS(err, "listen to http err")
 			}
 		},
 	}
