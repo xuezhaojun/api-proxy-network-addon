@@ -19,7 +19,6 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -34,8 +33,8 @@ const (
 	FlagClientKey       = "client-key"
 
 	// TODO: May user same cert files as Hub Cluster
-	FlagServerCert      = "server-cert"
-	FlagServerKey       = "server-key"
+	FlagServerCert = "server-cert"
+	FlagServerKey  = "server-key"
 )
 
 const (
@@ -126,7 +125,7 @@ func (u *UserServer) proxyHandler(wr http.ResponseWriter, req *http.Request) {
 	// update proti
 	req.Proto = "http"
 
-	klog.V(4).InfoS("request:", "scheme",req.URL.Scheme, "rawQuery", req.URL.RawQuery,"path",req.URL.Path)
+	klog.V(4).InfoS("request:", "scheme", req.URL.Scheme, "rawQuery", req.URL.RawQuery, "path", req.URL.Path)
 
 	proxy := httputil.NewSingleHostReverseProxy(apiserverURL)
 	proxy.ServeHTTP(LogResponseWriter{wr: wr}, req)
@@ -160,9 +159,9 @@ func parseRequestURL(requestURL string) (clusterID string, kubeAPIPath string, e
 		err = errors.New("requestURL format not correct")
 		return
 	}
-	clusterID = paths[1]                       // <clusterID>
-	kubeAPIPath = strings.Join(paths[2:], "/") // api/pods?timeout=32s
-	kubeAPIPath = strings.Split(kubeAPIPath,"?")[0] // api/pods
+	clusterID = paths[1]                             // <clusterID>
+	kubeAPIPath = strings.Join(paths[2:], "/")       // api/pods?timeout=32s
+	kubeAPIPath = strings.Split(kubeAPIPath, "?")[0] // api/pods
 	return
 }
 
@@ -188,51 +187,47 @@ func getMTLSDialer(o *options) (func(ctx context.Context, network, addr string) 
 
 	var proxyConn net.Conn
 
+	// TODO： the connection from user-proxy to proxy-agent should not close util all data been transferred
 	// Setup signal handler
-	ch := make(chan os.Signal, 1)
-	signal.Notify(ch)
+	//ch := make(chan os.Signal, 1)
+	//signal.Notify(ch)
 
-	go func() {
-		sig := <-ch
-		klog.InfoS("close signal:", sig)
-		if proxyConn == nil {
-			klog.InfoS("proxyConn is nil")
-		} else {
-			err := proxyConn.Close()
-			klog.ErrorS(err, "connection closed")
-		}
-	}()
+	//go func() {
+	//	sig := <-ch
+	//	klog.InfoS("close signal:", sig)
+	//	if proxyConn == nil {
+	//		klog.InfoS("proxyConn is nil")
+	//	} else {
+	//		err := proxyConn.Close()
+	//		klog.ErrorS(err, "connection closed")
+	//	}
+	//}()
 
-	switch o.mode {
-	case "http-connect":
-		proxyAddress := fmt.Sprintf("%s:%d", o.proxyHost, o.proxyPort)
-		requestAddress := fmt.Sprintf("%s:%d", o.requestHost, o.requestPort)
+	proxyAddress := fmt.Sprintf("%s:%d", o.proxyHost, o.proxyPort)
+	requestAddress := fmt.Sprintf("%s:%d", o.requestHost, o.requestPort)
 
-		proxyConn, err = tls.Dial("tcp", proxyAddress, tlsConfig)
-		if err != nil {
-			return nil, fmt.Errorf("dialing proxy %q failed: %v", proxyAddress, err)
-		}
-		fmt.Fprintf(proxyConn, "CONNECT %s HTTP/1.1\r\nHost: %s\r\n\r\n", requestAddress, "127.0.0.1")
-		br := bufio.NewReader(proxyConn)
-		res, err := http.ReadResponse(br, nil)
-		if err != nil {
-			return nil, fmt.Errorf("reading HTTP response from CONNECT to %s via proxy %s failed: %v",
-				requestAddress, proxyAddress, err)
-		}
-		if res.StatusCode != 200 {
-			return nil, fmt.Errorf("proxy error from %s while dialing %s: %v", proxyAddress, requestAddress, res.Status)
-		}
+	proxyConn, err = tls.Dial("tcp", proxyAddress, tlsConfig)
+	if err != nil {
+		return nil, fmt.Errorf("dialing proxy %q failed: %v", proxyAddress, err)
+	}
+	fmt.Fprintf(proxyConn, "CONNECT %s HTTP/1.1\r\nHost: %s\r\n\r\n", requestAddress, "127.0.0.1")
+	br := bufio.NewReader(proxyConn)
+	res, err := http.ReadResponse(br, nil)
+	if err != nil {
+		return nil, fmt.Errorf("reading HTTP response from CONNECT to %s via proxy %s failed: %v",
+			requestAddress, proxyAddress, err)
+	}
+	if res.StatusCode != 200 {
+		return nil, fmt.Errorf("proxy error from %s while dialing %s: %v", proxyAddress, requestAddress, res.Status)
+	}
 
-		// It's safe to discard the bufio.Reader here and return the
-		// original TCP conn directly because we only use this for
-		// TLS, and in TLS the client speaks first, so we know there's
-		// no unbuffered data. But we can double-check.
-		if br.Buffered() > 0 {
-			return nil, fmt.Errorf("unexpected %d bytes of buffered data from CONNECT proxy %q",
-				br.Buffered(), proxyAddress)
-		}
-	default:
-		return nil, fmt.Errorf("failed to process mode %s", o.mode)
+	// It's safe to discard the bufio.Reader here and return the
+	// original TCP conn directly because we only use this for
+	// TLS, and in TLS the client speaks first, so we know there's
+	// no unbuffered data. But we can double-check.
+	if br.Buffered() > 0 {
+		return nil, fmt.Errorf("unexpected %d bytes of buffered data from CONNECT proxy %q",
+			br.Buffered(), proxyAddress)
 	}
 
 	return func(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -310,7 +305,7 @@ func main() {
 			}
 
 			http.HandleFunc("/", us.proxyHandler)
-			if err := http.ListenAndServeTLS("localhost:"+strconv.Itoa(serverPort), serverCert,serverKey,nil); err != nil {
+			if err := http.ListenAndServeTLS("localhost:"+strconv.Itoa(serverPort), serverCert, serverKey, nil); err != nil {
 				klog.ErrorS(err, "listen to http err")
 			}
 		},
