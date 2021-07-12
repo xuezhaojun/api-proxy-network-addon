@@ -29,23 +29,6 @@ const (
 	DefaultPort = 8000
 )
 
-type LogResponseWriter struct {
-	wr http.ResponseWriter
-}
-
-func (l LogResponseWriter) Header() http.Header {
-	return l.wr.Header()
-}
-
-func (l LogResponseWriter) Write(bytes []byte) (int, error) {
-	klog.V(4).InfoS("response from apiserver:", "response", string(bytes))
-	return l.wr.Write(bytes)
-}
-
-func (l LogResponseWriter) WriteHeader(statusCode int) {
-	l.wr.WriteHeader(statusCode)
-}
-
 func proxyHandler(wr http.ResponseWriter, req *http.Request) {
 	apiserverURL, err := url.Parse(KUBE_APISERVER_ADDRESS)
 	if err != nil {
@@ -56,19 +39,31 @@ func proxyHandler(wr http.ResponseWriter, req *http.Request) {
 	klog.V(4).InfoS("requestURL", req.RequestURI)
 
 	if klog.V(4).Enabled() {
-		for k,v := range req.Header {
-			klog.InfoS("Header:",k,v)
+		for k, v := range req.Header {
+			klog.InfoS("Header:", k, v)
 		}
 	}
+
+	// TODO temperya add to for test
+	req.Header.Set("Authorization", "Bearer eyJhbGciOiJSUzI1NiIsImtpZCI6IlUzNlg2OURic2pGM2F0ZnRYU0d6dXJINDVBN3dpUm9kcUFZLU1hZi03MXcifQ.eyJpc3MiOiJrdWJlcm5ldGVzL3NlcnZpY2VhY2NvdW50Iiwia3ViZXJuZXRlcy5pby9zZXJ2aWNlYWNjb3VudC9uYW1lc3BhY2UiOiJkZWZhdWx0Iiwia3ViZXJuZXRlcy5pby9zZXJ2aWNlYWNjb3VudC9zZWNyZXQubmFtZSI6ImRlZmF1bHQtdG9rZW4tazlja3oiLCJrdWJlcm5ldGVzLmlvL3NlcnZpY2VhY2NvdW50L3NlcnZpY2UtYWNjb3VudC5uYW1lIjoiZGVmYXVsdCIsImt1YmVybmV0ZXMuaW8vc2VydmljZWFjY291bnQvc2VydmljZS1hY2NvdW50LnVpZCI6IjkzZTM4ZTRhLWRiNWYtNGEzMi1hOWIxLTVhNmY3OWFkNGZkMCIsInN1YiI6InN5c3RlbTpzZXJ2aWNlYWNjb3VudDpkZWZhdWx0OmRlZmF1bHQifQ.xpFr4zRznpvn2BhzQzB0fXtDRQloDuH9jwl6Q00IL7ZDP5Yighe0AyVAMhyi8P2eUqblbEZraOdWs4ifDn7KwQ-NckN-PNOtwsT-9Jzkrd5tAXj2Y25-NzMPe7hdx4Zt4WOcNsmsFsptdp4-UwAahLHA7BUqp_XW6lMT3Z5hkbYtcTR7E7zuRcaAtgCbFHN761zFyy0FvCyU7SYWhm9M2iEmiFt6zTYtyyHq6CU_9WOS910BrQElNXrc-0Z0AHzygl87_ZkGL3moy3RW5IsiSGyrh_OtdVArh5pITODxp0G1NWiAMRmp0fpJnYeRnYn1EaVlDPsy3CEUew4dZObMRg")
 
 	// change the proto from http to https
 	req.Proto = "https"
 
 	// skip insecure verify
 	http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	http.DefaultTransport.(*http.Transport).ForceAttemptHTTP2 = false
+	if !http.DefaultTransport.(*http.Transport).ForceAttemptHTTP2 && http.DefaultTransport.(*http.Transport).TLSClientConfig != nil {
+		klog.V(4).InfoS("not upgrade to http2")
+	}
 
 	proxy := httputil.NewSingleHostReverseProxy(apiserverURL)
-	proxy.ServeHTTP(LogResponseWriter{wr: wr}, req)
+
+	if req.Header.Get("Connection") == "Upgrade" && req.Header.Get("Upgrade") == "SPDY/3.1" {
+		klog.V(4).InfoS("upgrade to spdy/3.1")
+	}
+
+	proxy.ServeHTTP(wr, req)
 }
 
 func main() {
