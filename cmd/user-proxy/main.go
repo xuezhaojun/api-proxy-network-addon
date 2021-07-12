@@ -110,6 +110,7 @@ func (u *UserServer) proxyHandler(wr http.ResponseWriter, req *http.Request) {
 		return
 	}
 	http.DefaultTransport.(*http.Transport).DialContext = dialer
+	http.DefaultTransport.(*http.Transport).ForceAttemptHTTP2 = false
 
 	// restruct new apiserverURL
 	target := fmt.Sprintf("%s://%s:%d", o.requestProto, o.requestHost, o.requestPort)
@@ -128,7 +129,7 @@ func (u *UserServer) proxyHandler(wr http.ResponseWriter, req *http.Request) {
 	klog.V(4).InfoS("request:", "scheme", req.URL.Scheme, "rawQuery", req.URL.RawQuery, "path", req.URL.Path)
 
 	proxy := httputil.NewSingleHostReverseProxy(apiserverURL)
-	proxy.ServeHTTP(LogResponseWriter{wr: wr}, req)
+	proxy.ServeHTTP(wr, req)
 }
 
 type LogResponseWriter struct {
