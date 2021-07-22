@@ -4,13 +4,11 @@ import (
 	"bufio"
 	"context"
 	"crypto/tls"
-	"crypto/x509"
 	"errors"
 	goflag "flag"
 	"fmt"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-	"io/ioutil"
 	utilflag "k8s.io/component-base/cli/flag"
 	"k8s.io/component-base/logs"
 	"k8s.io/klog/v2"
@@ -20,16 +18,13 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strconv"
 	"strings"
 )
 
 const (
-	FlagServerPort      = "server-port"
-	FlagProxyUds        = "proxy-uds"
-	FlagProxyServerHost = "proxy-server-host"
-	FlagProxyServerPort = "proxy-server-port"
+	FlagServerPort = "server-port"
+	FlagProxyUds   = "proxy-uds"
 
 	FlagServerCert = "server-cert"
 	FlagServerKey  = "server-key"
@@ -42,18 +37,12 @@ const (
 )
 
 type UserServer struct {
-	proxyUdsName    string
-	proxyServerHost string
-	proxyServerPort int
+	proxyUdsName string
 }
 
-func NewUserServer(
-	proxyUdsName, proxyServerHost string, proxyServerPort int,
-) (*UserServer, error) {
+func NewUserServer(proxyUdsName string) (*UserServer, error) {
 	return &UserServer{
-		proxyUdsName:    proxyUdsName,
-		proxyServerHost: proxyServerHost,
-		proxyServerPort: proxyServerPort,
+		proxyUdsName: proxyUdsName,
 	}, nil
 }
 
@@ -69,8 +58,6 @@ func (u *UserServer) proxyHandler(wr http.ResponseWriter, req *http.Request) {
 	o := &options{
 		mode:         "http-connect",
 		proxyUdsName: u.proxyUdsName,
-		proxyHost:    u.proxyServerHost,
-		proxyPort:    u.proxyServerPort,
 		requestProto: ClusterRequestProto,
 		requestHost:  clusterID,
 		requestPort:  ClusterPort,
@@ -133,8 +120,6 @@ type options struct {
 	requestHost  string
 	requestPort  int
 	proxyUdsName string
-	proxyHost    string
-	proxyPort    int
 	mode         string
 }
 
@@ -148,12 +133,13 @@ func getUDSDialer(o *options) (func(ctx context.Context, network, addr string) (
 	go func() {
 		for {
 			sig := <-ch
-			if strings.Contains(sig.String(), "Urgent I/O") {
+			if strings.Contains(sig.String(), "urgent I/O") {
 				klog.V(4).InfoS("listen Urgent I/O but not close the connection")
 				continue
 			} else {
+				klog.InfoS("Signal close connection", "sig", sig.String())
 				if proxyConn == nil {
-					klog.InfoS("connect already closed")
+					klog.InfoS("connection already closed")
 				} else if proxyConn != nil {
 					err := proxyConn.Close()
 					klog.ErrorS(err, "connection closed")
@@ -194,49 +180,6 @@ func getUDSDialer(o *options) (func(ctx context.Context, network, addr string) (
 	}, nil
 }
 
-// getClientTLSConfig returns tlsConfig based on x509 certs
-func getClientTLSConfig(caFile, certFile, keyFile, serverName string, protos []string) (*tls.Config, error) {
-	certPool, err := getCACertPool(caFile)
-	if err != nil {
-		return nil, err
-	}
-
-	tlsConfig := &tls.Config{
-		RootCAs:    certPool,
-		MinVersion: tls.VersionTLS12,
-	}
-	if len(protos) != 0 {
-		tlsConfig.NextProtos = protos
-	}
-	if certFile == "" && keyFile == "" {
-		// return TLS config based on CA only
-		return tlsConfig, nil
-	}
-
-	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load X509 key pair %s and %s: %v", certFile, keyFile, err)
-	}
-
-	tlsConfig.ServerName = serverName
-	tlsConfig.Certificates = []tls.Certificate{cert}
-	return tlsConfig, nil
-}
-
-// getCACertPool loads CA certificates to pool
-func getCACertPool(caFile string) (*x509.CertPool, error) {
-	certPool := x509.NewCertPool()
-	caCert, err := ioutil.ReadFile(filepath.Clean(caFile))
-	if err != nil {
-		return nil, fmt.Errorf("failed to read CA cert %s: %v", caFile, err)
-	}
-	ok := certPool.AppendCertsFromPEM(caCert)
-	if !ok {
-		return nil, fmt.Errorf("failed to append CA cert to the cert pool")
-	}
-	return certPool, nil
-}
-
 func main() {
 	pflag.CommandLine.SetNormalizeFunc(utilflag.WordSepNormalizeFunc)
 	pflag.CommandLine.AddGoFlagSet(goflag.CommandLine)
@@ -250,12 +193,10 @@ func main() {
 		Run: func(cmd *cobra.Command, args []string) {
 			serverPort, _ := cmd.Flags().GetInt(FlagServerPort)
 			proxyUds, _ := cmd.Flags().GetString(FlagProxyUds)
-			proxyServerHost, _ := cmd.Flags().GetString(FlagProxyServerHost)
-			proxyServerPort, _ := cmd.Flags().GetInt(FlagProxyServerPort)
 			serverCert, _ := cmd.Flags().GetString(FlagServerCert)
 			serverKey, _ := cmd.Flags().GetString(FlagServerKey)
 
-			us, err := NewUserServer(proxyUds, proxyServerHost, proxyServerPort)
+			us, err := NewUserServer(proxyUds)
 			if err != nil {
 				klog.ErrorS(err, "new user server failed")
 				return
@@ -270,8 +211,6 @@ func main() {
 
 	cmd.Flags().Int(FlagServerPort, 8080, "handle user request using this port")
 	cmd.Flags().String(FlagProxyUds, ProxyUds, "the UDS name to connect to")
-	cmd.Flags().String(FlagProxyServerHost, "127.0.0.1", "The host of the proxy server.")
-	cmd.Flags().Int(FlagProxyServerPort, 8090, "The port the proxy server is listening on.")
 	cmd.Flags().String(FlagServerCert, "", "Secure communication with this cert.")
 	cmd.Flags().String(FlagServerKey, "", "Secure communication with this key.")
 
