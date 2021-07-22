@@ -141,15 +141,25 @@ type options struct {
 func getUDSDialer(o *options) (func(ctx context.Context, network, addr string) (net.Conn, error), error) {
 	var proxyConn net.Conn
 	var err error
+
 	// Setup signal handler
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch)
-
 	go func() {
-		<-ch
-		if proxyConn != nil {
-			err := proxyConn.Close()
-			klog.ErrorS(err, "connection closed")
+		for {
+			sig := <-ch
+			if strings.Contains(sig.String(), "Urgent I/O") {
+				klog.V(4).InfoS("listen Urgent I/O but not close the connection")
+				continue
+			} else {
+				if proxyConn == nil {
+					klog.InfoS("connect already closed")
+				} else if proxyConn != nil {
+					err := proxyConn.Close()
+					klog.ErrorS(err, "connection closed")
+				}
+				return
+			}
 		}
 	}()
 
