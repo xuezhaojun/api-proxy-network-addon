@@ -19,6 +19,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -26,13 +27,10 @@ import (
 
 const (
 	FlagServerPort      = "server-port"
+	FlagProxyUds        = "proxy-uds"
 	FlagProxyServerHost = "proxy-server-host"
 	FlagProxyServerPort = "proxy-server-port"
-	FlagCACert          = "ca-cert"
-	FlagClientCert      = "client-cert"
-	FlagClientKey       = "client-key"
 
-	// TODO: May user same cert files as Hub Cluster
 	FlagServerCert = "server-cert"
 	FlagServerKey  = "server-key"
 )
@@ -40,39 +38,20 @@ const (
 const (
 	ClusterPort         = 8000
 	ClusterRequestProto = "http"
+	ProxyUds            = "/go/src/github.com/open-cluster-management/api-network-proxy-addon/socket"
 )
 
 type UserServer struct {
-	caCert          string
-	clientCert      string
-	clientKey       string
+	proxyUdsName    string
 	proxyServerHost string
 	proxyServerPort int
 }
 
 func NewUserServer(
-	caCert, clientCert, clientKey, proxyServerHost string, proxyServerPort int,
+	proxyUdsName, proxyServerHost string, proxyServerPort int,
 ) (*UserServer, error) {
-	if caCert != "" {
-		if _, err := os.Stat(caCert); os.IsNotExist(err) {
-			return nil, err
-		}
-	}
-	if clientCert != "" {
-		if _, err := os.Stat(clientCert); os.IsNotExist(err) {
-			return nil, err
-		}
-	}
-	if clientKey != "" {
-		if _, err := os.Stat(clientKey); os.IsNotExist(err) {
-			return nil, err
-		}
-	}
-
 	return &UserServer{
-		caCert:          caCert,
-		clientKey:       clientKey,
-		clientCert:      clientCert,
+		proxyUdsName:    proxyUdsName,
 		proxyServerHost: proxyServerHost,
 		proxyServerPort: proxyServerPort,
 	}, nil
@@ -89,9 +68,7 @@ func (u *UserServer) proxyHandler(wr http.ResponseWriter, req *http.Request) {
 	// connect with http tunnel
 	o := &options{
 		mode:         "http-connect",
-		caCert:       u.caCert,
-		clientKey:    u.clientKey,
-		clientCert:   u.clientCert,
+		proxyUdsName: u.proxyUdsName,
 		proxyHost:    u.proxyServerHost,
 		proxyPort:    u.proxyServerPort,
 		requestProto: ClusterRequestProto,
@@ -104,7 +81,7 @@ func (u *UserServer) proxyHandler(wr http.ResponseWriter, req *http.Request) {
 	http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 
 	// replace dialer with tunnel dialer
-	dialer, err := getMTLSDialer(o)
+	dialer, err := getUDSDialer(o)
 	if err != nil {
 		klog.ErrorS(err, "get dialer failed")
 		return
@@ -132,23 +109,6 @@ func (u *UserServer) proxyHandler(wr http.ResponseWriter, req *http.Request) {
 	proxy.ServeHTTP(wr, req)
 }
 
-type LogResponseWriter struct {
-	wr http.ResponseWriter
-}
-
-func (l LogResponseWriter) Header() http.Header {
-	return l.wr.Header()
-}
-
-func (l LogResponseWriter) Write(bytes []byte) (int, error) {
-	klog.V(4).InfoS("response from apiserver:", "response", string(bytes))
-	return l.wr.Write(bytes)
-}
-
-func (l LogResponseWriter) WriteHeader(statusCode int) {
-	l.wr.WriteHeader(statusCode)
-}
-
 // parseRequestURL
 // Example Input: <service-ip>:8080/<clusterID>/api/pods?timeout=32s
 // Example Output:
@@ -168,58 +128,46 @@ func parseRequestURL(requestURL string) (clusterID string, kubeAPIPath string, e
 
 // options is copy from apiserver-network-proxy/cmd/client/main.go GrpcProxyClientOptions
 type options struct {
-	clientCert   string
-	clientKey    string
-	caCert       string
 	requestProto string
 	requestPath  string
 	requestHost  string
 	requestPort  int
+	proxyUdsName string
 	proxyHost    string
 	proxyPort    int
 	mode         string
 }
 
-func getMTLSDialer(o *options) (func(ctx context.Context, network, addr string) (net.Conn, error), error) {
-	tlsConfig, err := getClientTLSConfig(o.caCert, o.clientCert, o.clientKey, o.proxyHost, nil)
-	if err != nil {
-		return nil, err
-	}
-
+func getUDSDialer(o *options) (func(ctx context.Context, network, addr string) (net.Conn, error), error) {
 	var proxyConn net.Conn
-
-	// TODO： the connection from user-proxy to proxy-agent should not close util all data been transferred
+	var err error
 	// Setup signal handler
-	//ch := make(chan os.Signal, 1)
-	//signal.Notify(ch)
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch)
 
-	//go func() {
-	//	sig := <-ch
-	//	klog.InfoS("close signal:", sig)
-	//	if proxyConn == nil {
-	//		klog.InfoS("proxyConn is nil")
-	//	} else {
-	//		err := proxyConn.Close()
-	//		klog.ErrorS(err, "connection closed")
-	//	}
-	//}()
+	go func() {
+		<-ch
+		if proxyConn != nil {
+			err := proxyConn.Close()
+			klog.ErrorS(err, "connection closed")
+		}
+	}()
 
-	proxyAddress := fmt.Sprintf("%s:%d", o.proxyHost, o.proxyPort)
 	requestAddress := fmt.Sprintf("%s:%d", o.requestHost, o.requestPort)
 
-	proxyConn, err = tls.Dial("tcp", proxyAddress, tlsConfig)
+	proxyConn, err = net.Dial("unix", o.proxyUdsName)
 	if err != nil {
-		return nil, fmt.Errorf("dialing proxy %q failed: %v", proxyAddress, err)
+		return nil, fmt.Errorf("dialing proxy %q failed: %v", o.proxyUdsName, err)
 	}
-	fmt.Fprintf(proxyConn, "CONNECT %s HTTP/1.1\r\nHost: %s\r\n\r\n", requestAddress, "127.0.0.1")
+	fmt.Fprintf(proxyConn, "CONNECT %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: %s\r\n\r\n", requestAddress, "127.0.0.1")
 	br := bufio.NewReader(proxyConn)
 	res, err := http.ReadResponse(br, nil)
 	if err != nil {
-		return nil, fmt.Errorf("reading HTTP response from CONNECT to %s via proxy %s failed: %v",
-			requestAddress, proxyAddress, err)
+		return nil, fmt.Errorf("reading HTTP response from CONNECT to %s via uds proxy %s failed: %v",
+			requestAddress, o.proxyUdsName, err)
 	}
 	if res.StatusCode != 200 {
-		return nil, fmt.Errorf("proxy error from %s while dialing %s: %v", proxyAddress, requestAddress, res.Status)
+		return nil, fmt.Errorf("proxy error from %s while dialing %s: %v", o.proxyUdsName, requestAddress, res.Status)
 	}
 
 	// It's safe to discard the bufio.Reader here and return the
@@ -227,8 +175,8 @@ func getMTLSDialer(o *options) (func(ctx context.Context, network, addr string) 
 	// TLS, and in TLS the client speaks first, so we know there's
 	// no unbuffered data. But we can double-check.
 	if br.Buffered() > 0 {
-		return nil, fmt.Errorf("unexpected %d bytes of buffered data from CONNECT proxy %q",
-			br.Buffered(), proxyAddress)
+		return nil, fmt.Errorf("unexpected %d bytes of buffered data from CONNECT uds proxy %q",
+			br.Buffered(), o.proxyUdsName)
 	}
 
 	return func(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -291,15 +239,13 @@ func main() {
 		Short: "anp-user-server",
 		Run: func(cmd *cobra.Command, args []string) {
 			serverPort, _ := cmd.Flags().GetInt(FlagServerPort)
+			proxyUds, _ := cmd.Flags().GetString(FlagProxyUds)
 			proxyServerHost, _ := cmd.Flags().GetString(FlagProxyServerHost)
 			proxyServerPort, _ := cmd.Flags().GetInt(FlagProxyServerPort)
-			caCert, _ := cmd.Flags().GetString(FlagCACert)
-			clientCert, _ := cmd.Flags().GetString(FlagClientCert)
-			clientKey, _ := cmd.Flags().GetString(FlagClientKey)
 			serverCert, _ := cmd.Flags().GetString(FlagServerCert)
 			serverKey, _ := cmd.Flags().GetString(FlagServerKey)
 
-			us, err := NewUserServer(caCert, clientCert, clientKey, proxyServerHost, proxyServerPort)
+			us, err := NewUserServer(proxyUds, proxyServerHost, proxyServerPort)
 			if err != nil {
 				klog.ErrorS(err, "new user server failed")
 				return
@@ -313,13 +259,9 @@ func main() {
 	}
 
 	cmd.Flags().Int(FlagServerPort, 8080, "handle user request using this port")
+	cmd.Flags().String(FlagProxyUds, ProxyUds, "the UDS name to connect to")
 	cmd.Flags().String(FlagProxyServerHost, "127.0.0.1", "The host of the proxy server.")
 	cmd.Flags().Int(FlagProxyServerPort, 8090, "The port the proxy server is listening on.")
-	cmd.Flags().String(FlagCACert, "", "We use to validate clients.")
-	cmd.Flags().String(FlagClientCert, "", "Secure communication with this cert.")
-	cmd.Flags().String(FlagClientKey, "", "Secure communication with this key.")
-
-	// TODO: same auth as Hub cluster
 	cmd.Flags().String(FlagServerCert, "", "Secure communication with this cert.")
 	cmd.Flags().String(FlagServerKey, "", "Secure communication with this key.")
 
